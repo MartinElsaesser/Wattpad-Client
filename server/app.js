@@ -1,58 +1,80 @@
 // const express = require("express");
 import express from "express";
+import puppeteer from "puppeteer";
+import querystring from "querystring";
+
 const app = express();
 // const fetch = require("node-fetch");
-import fetch from 'node-fetch';
+// import fetch from 'node-fetch';
 
 
 app.use(express.json());
 
-function parseCookie(str) {
-	return str
-		.split(";")
-		.map(cookie => {
-			cookie = cookie.trim();
-			var idx = cookie.indexOf("=");
-			var splits = [cookie.slice(0, idx), cookie.slice(idx + 1)];
-			return splits
-		})
-		.reduce((acc, v) => {
-			acc[decodeURIComponent(v[0].trim())] = decodeURIComponent(v[1].trim());
-			return acc;
-		}, {});
+
+class Page {
+	constructor() {
+		this.browser = null;
+		this.page = null;
+	}
+	async loginWithWattpad(username, password) {
+		this.browser = await puppeteer.launch();
+		this.page = await this.browser.newPage();
+
+		const postData = { username, password };
+		await this.page.setRequestInterception(true);
+
+		this.page.once('request', request => {
+			var data = {
+				'method': 'POST',
+				'postData': querystring.stringify(postData),
+				'headers': {
+					...request.headers(),
+					'Content-Type': 'application/x-www-form-urlencoded'
+				},
+			};
+
+			request.continue(data);
+			this.page.setRequestInterception(false);
+		});
+
+		const response = await this.page.goto('https://www.wattpad.com/login');
+
+		return response;
+
+	}
+	async isAuthenticated() {
+		return true;
+	}
+	async getWattpadCookies(auth /* specify which auth*/) {
+		if (!this.page) return;
+		if (!await this.isAuthenticated()) throw "Not logged In";
+		let cookies = await this.page.cookies();
+		return cookies;
+	}
 }
+
+const page = new Page();
 
 app.get("/", async (req, res) => {
 	const username = "marelsmare1@gmail.com";
 	const password = "E$$enboob2002";
-	const r = await fetch("https://www.wattpad.com/login", {
-		method: "POST",
-		headers: {
-			"user-agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/110.0.0.0 Safari/537.36",
-			"Content-Type": "application/x-www-form-urlencoded",
-			'sec-ch-ua': '"Chromium";v="110", "Not A(Brand";v="24", "Google Chrome";v="110"'
-		},
-		body: new URLSearchParams({
-			username,
-			password
-		})
-	});
+	const result = await page.loginWithWattpad(username, password);
+	res.send(await result.text());
 
-	const cookieHeader = r.headers.get("set-cookie");
-	const cookies = parseCookie(cookieHeader);
-
-
-	const site = await fetch("https://www.wattpad.com/", {
-		method: "GET",
-		headers: {
-			"cookie": cookieHeader
-		},
-	});
-	console.log(
-		cookies
-	)
-	const html = await site.text()
-	res.send(html);
 });
 
+app.get("/cookies", async (req, res) => {
+	const cookies = await page.getWattpadCookies();
+	res.send(cookies);
+})
+
 app.listen("8080")
+
+
+// Page
+// - pass cookie
+// - pass google login
+// - pass wattpad login
+// - get cookies
+// - get pages/extract data (extractor function)
+//
